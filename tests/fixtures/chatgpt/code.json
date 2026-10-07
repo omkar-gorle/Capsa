@@ -1,0 +1,7 @@
+{
+  "description": "ChatGPT: code block with language tag",
+  "url": "https://chatgpt.com/c/code-001",
+  "html": "<main><div data-message-author-role=\"user\"><p>Write a Python hello world.</p></div><div data-message-author-role=\"assistant\"><pre><div class=\"hdr\"><span>python</span><button>Copy code</button></div><code class=\"language-python\">print('Hello, world!')</code></pre></div></main>",
+  "expectedRoles": ["User", "Assistant"],
+  "expectedCount": 2
+}

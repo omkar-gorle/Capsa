@@ -1,0 +1,33 @@
+node_modules/
+*.capsule
+.DS_Store
+Thumbs.db
+tests/debug_code.js
+tests/patch_capsule.js
+# Never commit API keys
+*.env
+.env*
+
+# Build and test output
+dist/
+build/
+coverage/
+*.log
+*.tmp
+*.bak
+tmp/
+temp/
+benchmark-output/
+debug-output/
+
+# Local editor and agent state
+.vscode/
+.idea/
+.agent/
+.copilot/
+agent-session-data/
+session-data/
+
+# Local browser data
+browser-data/
+browser-profile/

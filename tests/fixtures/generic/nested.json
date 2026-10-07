@@ -1,0 +1,8 @@
+{
+  "description": "Generic: ambiguous deeply nested messages are not double-counted",
+  "url": "https://example.org/nested-chat",
+  "html": "<div class=\"chat-container\"><div class=\"user-message\"><div class=\"user-message-inner\"><div class=\"user-message-text\">Hello there, can you help me debug this code?</div></div></div><div class=\"assistant-message\"><div class=\"assistant-message-inner\">Of course, I can help you with debugging! Please share the code.</div></div></div>",
+  "expectedRoles": ["User", "Assistant"],
+  "expectedCount": 2,
+  "expectedWarningPattern": "generic reader"
+}

@@ -1,0 +1,7 @@
+{
+  "description": "Claude: basic conversation with user and assistant turns",
+  "url": "https://claude.ai/chat/abc-111",
+  "html": "<div><div data-testid=\"user-message\"><p>What is the capital of France?</p></div><div class=\"font-claude-response\"><p>The capital of France is <strong>Paris</strong>.</p></div><div data-testid=\"user-message\"><p>And Germany?</p></div><div class=\"font-claude-response\"><p>The capital of Germany is <strong>Berlin</strong>.</p></div></div>",
+  "expectedRoles": ["User", "Assistant", "User", "Assistant"],
+  "expectedCount": 4
+}

@@ -1,0 +1,70 @@
+{
+  "manifest_version": 3,
+  "name": "Chat Capsule",
+  "version": "5.0.0",
+  "description": "Move your AI work, not just your chat. Capture conversation state, compress it intelligently, and continue on any AI platform. Everything stays on your device — AI enhancement is optional.",
+
+  "permissions": ["activeTab", "scripting", "storage", "clipboardWrite", "sidePanel"],
+
+  "optional_permissions": [],
+
+  "optional_host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://copilot.microsoft.com/*",
+    "https://www.perplexity.ai/*",
+    "https://grok.com/*",
+    "https://x.com/*",
+    "https://chat.deepseek.com/*"
+  ],
+
+  "action": {
+    "default_popup": "extension/popup/popup.html",
+    "default_title": "Chat Capsule — Move your AI work",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "background": {
+    "service_worker": "extension/background/service-worker.js"
+  },
+
+  "side_panel": {
+    "default_path": "extension/popup/popup.html"
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self' http://localhost:11434 https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://openrouter.ai"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "extension/content/capture-runtime.js",
+        "lib/capsule.js"
+      ],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://copilot.microsoft.com/*",
+        "https://www.perplexity.ai/*",
+        "https://grok.com/*",
+        "https://x.com/*",
+        "https://chat.deepseek.com/*"
+      ]
+    }
+  ]
+}

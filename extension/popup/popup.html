@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Capsule</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="popup.css">
+  <script src="../../lib/capsule.js"></script>
+  <script src="../../extension/ai/provider.js"></script>
+  <script src="../../extension/ai/prompts.js"></script>
+  <script src="../../extension/ai/verifier.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ── HEADER ── -->
+  <header class="header">
+    <div class="logo">
+      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/>
+        <path d="M12 7V5a2 2 0 00-2-2H8"/>
+        <circle cx="8" cy="12" r="1.5" fill="currentColor"/>
+        <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+        <circle cx="16" cy="12" r="1.5" fill="currentColor"/>
+      </svg>
+      <span class="logo-text">Chat Capsule <span class="version">v1.0</span></span>
+    </div>
+    <div class="header-actions">
+      <button id="openSidePanel" class="icon-btn" title="Open in side panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+      </button>
+      <button id="openTab" class="icon-btn" title="Open in new tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── STATUS BAR ── -->
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+
+  <!-- ── LAST CAPTURE BANNER ── -->
+  <div id="lastBanner" class="banner info" hidden>
+    <span id="lastText"></span>
+    <button id="useLast" class="btn-xs">Use it</button>
+  </div>
+
+  <!-- ── TABS ── -->
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="capture" role="tab" id="tab-capture">Capture</button>
+    <button class="tab" data-tab="ai" role="tab" id="tab-ai">AI</button>
+    <button class="tab" data-tab="history" role="tab" id="tab-history">History</button>
+    <button class="tab" data-tab="profile" role="tab" id="tab-profile">Profile</button>
+  </nav>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- TAB: CAPTURE                                       -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <section id="pane-capture" class="pane active">
+
+    <!-- Capture controls -->
+    <div class="card">
+      <div class="platform-row">
+        <div class="platform-badge" id="platformBadge">—</div>
+        <div class="coverage-badge" id="coverageBadge" hidden>
+          <span id="coverageIcon"></span>
+          <span id="coverageText"></span>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="capture" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M20.188 10.934a8 8 0 10-7.254 10.988"/><path d="M20 21l-3-3m0 0l-3 3m3-3v6"/></svg>
+          Capture
+        </button>
+        <button id="deep" class="btn btn-secondary" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a2 2 0 100 4 2 2 0 000-4z"/></svg>
+          Deep
+        </button>
+      </div>
+    </div>
+
+    <!-- Report -->
+    <div id="report" class="card" hidden>
+      <div class="report-title" id="repTitle"></div>
+      <div class="report-counts" id="repCounts"></div>
+      <div class="report-meta" id="repMeta"></div>
+      <ul class="warn-list" id="repWarn"></ul>
+
+      <!-- Quality score -->
+      <div class="quality-row" id="qualityRow" hidden>
+        <div class="quality-score" id="qualityScore"></div>
+        <div class="quality-label" id="qualityLabel"></div>
+      </div>
+    </div>
+
+    <!-- Build section -->
+    <div id="build" class="card" hidden>
+      <div class="section-label">Capsule Mode</div>
+      <div class="mode-grid">
+        <label class="mode-card">
+          <input type="radio" name="mode" id="modeCompact" value="l0"> <span class="mode-name">Compact</span><span class="mode-desc">Goal + latest request + open tasks</span>
+        </label>
+        <label class="mode-card">
+          <input type="radio" name="mode" id="modeStandard" value="l1" checked> <span class="mode-name">Standard</span><span class="mode-desc">Adds decisions + done work + code</span>
+        </label>
+        <label class="mode-card">
+          <input type="radio" name="mode" id="modeExtended" value="l2"> <span class="mode-name">Extended</span><span class="mode-desc">Adds recent conversation verbatim</span>
+        </label>
+        <label class="mode-card">
+          <input type="radio" name="mode" id="modeSmart" value="smart"> <span class="mode-name">Smart</span><span class="mode-desc">Locally compressed, priority-ordered</span>
+        </label>
+        <label class="mode-card mode-card--ai" id="modeAiCard">
+          <input type="radio" name="mode" id="modeAiSmart" value="ai-smart"> <span class="mode-name">AI Smart ✦</span><span class="mode-desc">AI-extracted + verified state</span>
+        </label>
+        <label class="mode-card">
+          <input type="radio" name="mode" id="modeLossless" value="lossless"> <span class="mode-name">Lossless</span><span class="mode-desc">Everything captured verbatim</span>
+        </label>
+      </div>
+
+      <div class="row-wrap">
+        <label class="inline-label">
+          Token budget
+          <input type="number" id="budget" value="4000" min="500" max="200000" step="500" class="num-input">
+        </label>
+        <label class="inline-label">
+          Intent
+          <select id="intent" class="sel">
+            <option value="resume">Resume</option>
+            <option value="load">Load</option>
+            <option value="debug">Debug</option>
+            <option value="write">Write</option>
+            <option value="research">Research</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="checkbox-row">
+        <label class="chk"><input type="checkbox" id="clean" checked> Remove filler phrases</label>
+        <label class="chk"><input type="checkbox" id="useProfile"> Include profile</label>
+      </div>
+
+      <!-- AI box (shown when ai-smart mode selected) -->
+      <div id="aiBox" class="ai-box" hidden>
+        <div class="ai-status-row">
+          <div id="aiProviderStatus" class="ai-provider-status">
+            <span class="dot"></span>
+            <span id="aiProviderName">No AI configured</span>
+          </div>
+          <div id="aiCostEstimate" class="ai-cost" hidden></div>
+        </div>
+        <div class="privacy-notice" id="privacyNotice" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span id="privacyText"></span>
+        </div>
+        <!-- Fallback: original AI writes the capsule -->
+        <details class="collapsible" id="aiFallbackBox">
+          <summary>Or: let the original AI write the capsule</summary>
+          <div class="fallback-inner">
+            <button id="aiCopy" class="btn btn-sm">Copy prompt</button>
+            <textarea id="aiReply" class="textarea-sm" rows="4" placeholder="Paste the original AI's response here…"></textarea>
+            <button id="aiUse" class="btn btn-sm btn-secondary">Use this reply</button>
+          </div>
+        </details>
+      </div>
+
+      <button id="generate" class="btn btn-primary btn-full">Generate Capsule</button>
+    </div>
+
+    <!-- Preview -->
+    <div id="previewBox" class="card" hidden>
+      <div class="section-label">Preview</div>
+      <div class="meter">
+        <div id="meterBar" class="meter-bar"></div>
+      </div>
+      <div id="meterText" class="meter-text"></div>
+      <div id="saving" class="saving-text"></div>
+      <ul class="warn-list" id="buildWarn"></ul>
+
+      <!-- Capsule quality badge -->
+      <div id="qualityBadge" class="quality-badge" hidden></div>
+
+      <textarea id="preview" class="preview-area" spellcheck="false" rows="10"></textarea>
+      <div id="msgsSummary" class="msgs-summary"></div>
+
+      <!-- Message selection -->
+      <details class="collapsible" id="msgSection">
+        <summary>Messages</summary>
+        <div class="sel-controls">
+          <button id="selAll" class="btn-xs">All</button>
+          <button id="selNone" class="btn-xs">None</button>
+          <button id="selMine" class="btn-xs">Mine</button>
+        </div>
+        <div id="msglist" class="msg-list"></div>
+      </details>
+
+      <!-- Loss test -->
+      <details class="collapsible" id="lossSection">
+        <summary>Loss test</summary>
+        <div id="lossList"></div>
+      </details>
+
+      <!-- Actions -->
+      <div class="action-bar">
+        <button id="copy" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          Copy
+        </button>
+        <button id="insert" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 12 12 8 8 12"/><line x1="12" y1="16" x2="12" y2="8"/><rect x="2" y="14" width="20" height="8" rx="1"/></svg>
+          Insert
+        </button>
+        <button id="save" class="btn btn-ghost">Save</button>
+        <div class="download-group">
+          <button id="dlMd" class="btn-xs">↓ .md</button>
+          <button id="dlCapsule" class="btn-xs">↓ .capsule</button>
+        </div>
+      </div>
+
+      <!-- Passphrase for encryption -->
+      <label class="inline-label passphrase-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        <input type="password" id="passphrase" placeholder="Passphrase (optional, AES-256)" class="pass-input">
+      </label>
+
+      <button id="regen" class="btn btn-ghost btn-sm" hidden>↺ Regenerate</button>
+    </div>
+
+  </section>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- TAB: AI SETTINGS                                   -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <section id="pane-ai" class="pane">
+
+    <div class="card">
+      <div class="section-label">AI Enhancement</div>
+      <p class="help-text">AI is optional. The extension works fully without it. AI is used to extract state intelligently, resolve decision conflicts, and generate continuation prompts.</p>
+
+      <label class="field-label">Provider
+        <select id="aiProvider" class="sel">
+          <option value="ollama">Ollama (Local) — Recommended</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic Claude</option>
+          <option value="litellm">LiteLLM Gateway</option>
+          <option value="custom">Custom OpenAI-compatible Endpoint</option>
+        </select>
+      </label>
+
+      <label class="field-label" id="apiKeyRow">API Key
+        <input type="password" id="aiApiKey" class="field-input" placeholder="sk-…" autocomplete="off">
+        <span class="field-hint">Stored locally in your browser. Never sent to our servers.</span>
+      </label>
+
+      <label class="field-label" id="customEndpointRow" hidden>Endpoint URL
+        <input type="url" id="aiEndpoint" class="field-input" placeholder="http://localhost:11434/v1">
+      </label>
+
+      <label class="field-label">Model
+        <select id="aiModel" class="sel">
+          <option value="">— select after connecting —</option>
+        </select>
+      </label>
+
+      <label class="field-label" id="customModelRow" hidden>Model name
+        <input type="text" id="aiModelCustom" class="field-input" placeholder="llama3.2">
+      </label>
+
+      <div class="field-row">
+        <label class="field-label-sm">Timeout (s)
+          <input type="number" id="aiTimeout" class="num-input-sm" value="30" min="5" max="120">
+        </label>
+        <label class="field-label-sm">Temperature
+          <input type="number" id="aiTemp" class="num-input-sm" value="0.3" min="0" max="1" step="0.05">
+        </label>
+        <label class="field-label-sm">Max output tokens
+          <input type="number" id="aiMaxTokens" class="num-input-sm" value="2048" min="256" max="16384" step="256">
+        </label>
+      </div>
+
+      <div id="aiConnectionStatus" class="connection-status" hidden>
+        <span class="dot"></span>
+        <span id="aiConnText"></span>
+      </div>
+
+      <!-- Privacy notice -->
+      <div class="privacy-block" id="aiPrivacyBlock">
+        <div class="privacy-icon" id="privacyIcon">🔒</div>
+        <div class="privacy-body">
+          <strong id="privacyTitle">Local AI</strong>
+          <p id="privacyBody">Processing stays on this device. No conversation content leaves your browser.</p>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="aiTest" class="btn btn-secondary">Test connection</button>
+        <button id="aiSave" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+
+    <!-- Model list (populated after connect) -->
+    <div class="card" id="modelListCard" hidden>
+      <div class="section-label">Available Models</div>
+      <div id="modelList" class="model-list"></div>
+    </div>
+
+  </section>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- TAB: HISTORY                                       -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <section id="pane-history" class="pane">
+
+    <div class="card">
+      <div class="import-row">
+        <button id="importBtn" class="btn btn-secondary">Import .capsule</button>
+        <input type="file" id="importFile" accept=".capsule,.json" hidden>
+      </div>
+      <div id="storage" class="storage-meter"></div>
+    </div>
+
+    <div id="saved" class="saved-list"></div>
+
+  </section>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- TAB: PROFILE                                       -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <section id="pane-profile" class="pane">
+
+    <div class="card">
+      <p class="help-text">Your profile is included in capsules when "Include profile" is checked. It tells the next AI who you are and how you work — separate from any individual project's state.</p>
+
+      <label class="field-label">Your name / handle
+        <input type="text" id="profName" class="field-input" placeholder="e.g. Alex">
+      </label>
+      <label class="field-label">Preferred tone
+        <input type="text" id="profTone" class="field-input" placeholder="e.g. direct, no preamble">
+      </label>
+      <label class="field-label">Default stack / tools
+        <input type="text" id="profStack" class="field-input" placeholder="e.g. Python, FastAPI, PostgreSQL">
+      </label>
+      <label class="field-label">Standing constraints
+        <textarea id="profConstraints" class="textarea-sm" rows="3" placeholder="One constraint per line&#10;e.g. No TypeScript&#10;e.g. Must work offline"></textarea>
+      </label>
+      <label class="field-label">Notes for AI
+        <textarea id="profNotes" class="textarea-sm" rows="2" placeholder="Anything else the AI should always know about you…"></textarea>
+      </label>
+
+      <div id="profStatus" class="status" aria-live="polite"></div>
+      <button id="profSave" class="btn btn-primary">Save Profile</button>
+    </div>
+
+  </section>
+
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
