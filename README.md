@@ -174,7 +174,9 @@ Run it with:
 node tests/run.js
 ```
 
-The e2e directory includes browser-level checks for longer chats, capture survival across popup closures, and mocked AI pages under [tests/e2e](tests/e2e). These scripts are designed for a real Chromium environment and are not a substitute for a normal browser test run.
+For browser-level validation, the repo includes the e2e suite under [tests/e2e](tests/e2e). It covers longer conversations, popup-close survival, and mocked site behavior against a real Chromium workflow. These scripts are valuable for checking interaction and page behavior that a static Node script cannot fully model.
+
+The expected local command output is a clean pass from the Node test runner. If a site-specific or browser-specific test cannot execute in your environment, the README should reflect that as an environment limitation rather than as a passing result.
 
 ## Troubleshooting and limitations
 
