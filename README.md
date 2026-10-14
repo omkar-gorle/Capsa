@@ -119,8 +119,11 @@ The project does not depend on a separate backend, database, or cloud infrastruc
 4. Click Load unpacked and select the repository root.
 5. Confirm the extension appears in the toolbar and open it from the extension icon.
 6. Visit a supported AI chat or paste a supported URL to begin capturing.
+7. If the extension is not visible immediately, reload the page, confirm the repository root is the unpacked folder, and check that the Chrome extension page shows the Capsa card with no errors.
 
 If you want to test the extension in a local browser: use the project root as the unpacked extension folder, not a nested directory under a copied project name.
+
+A simple first-run check is to open a supported chat page, click the Capsa icon, and confirm the card opens with the expected black UI. Then paste a valid URL and verify that the job begins and either shows a verified capsule or a clear “not verified” reason instead of silently failing.
 
 ## Developer setup
 
