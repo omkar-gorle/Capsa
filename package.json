@@ -1,0 +1,12 @@
+{
+  "name": "capsa",
+  "version": "6.2.0",
+  "private": true,
+  "description": "Capsa browser extension for preserving AI conversation context.",
+  "scripts": {
+    "test": "node tests/run.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
