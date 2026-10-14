@@ -45,6 +45,8 @@ Capsa addresses that problem by making capture and handoff explicit and transpar
   - Capsa stores its working state in the browser and operates without a separate backend service.
 - Fallback handling for incomplete reads
   - If the conversation cannot be proven complete, the extension keeps the raw data in a pending state and presents a clear “not verified” path instead of silently producing misleading output.
+- Supported site coverage
+  - The extension explicitly supports ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, and DeepSeek via host permissions and URL validation rules in [lib/hosts.js](lib/hosts.js).
 
 ## How Capsa works
 
