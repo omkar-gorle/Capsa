@@ -1,7 +1,0 @@
-{
-  "description": "Claude: basic user + assistant turn",
-  "url": "https://claude.ai/chat/basic-001",
-  "html": "<div><div data-testid=\"user-message\"><p>Explain recursion in one sentence.</p></div><div data-testid=\"assistant-message\"><p>Recursion is when a function calls itself to solve smaller subproblems until a base case is reached.</p></div></div>",
-  "expectedRoles": ["User", "Assistant"],
-  "expectedCount": 2
-}

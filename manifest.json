@@ -1,14 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Chat Capsule",
-  "version": "5.0.0",
-  "description": "Move your AI work, not just your chat. Capture conversation state, compress it intelligently, and continue on any AI platform. Everything stays on your device — AI enhancement is optional.",
-
-  "permissions": ["activeTab", "scripting", "storage", "clipboardWrite", "sidePanel"],
-
-  "optional_permissions": [],
-
-  "optional_host_permissions": [
+  "name": "Capsa",
+  "version": "6.2.0",
+  "description": "Move your AI work. Capture a chat, shrink it into a capsule, and continue on any AI. Everything stays on your device.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "clipboardWrite",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://claude.ai/*",
@@ -16,44 +18,24 @@
     "https://copilot.microsoft.com/*",
     "https://www.perplexity.ai/*",
     "https://grok.com/*",
-    "https://x.com/*",
+    "https://x.com/i/grok*",
     "https://chat.deepseek.com/*"
   ],
-
   "action": {
-    "default_popup": "extension/popup/popup.html",
-    "default_title": "Chat Capsule — Move your AI work",
+    "default_popup": "ui/popup.html",
+    "default_title": "Capsa \u2014 move your AI work",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
   },
-
   "background": {
-    "service_worker": "extension/background/service-worker.js"
+    "service_worker": "background.js"
   },
-
-  "side_panel": {
-    "default_path": "extension/popup/popup.html"
-  },
-
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  },
-
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self' http://localhost:11434 https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://openrouter.ai"
-  },
-
-  "web_accessible_resources": [
+  "content_scripts": [
     {
-      "resources": [
-        "extension/content/capture-runtime.js",
-        "lib/capsule.js"
-      ],
       "matches": [
         "https://chatgpt.com/*",
         "https://chat.openai.com/*",
@@ -62,9 +44,38 @@
         "https://copilot.microsoft.com/*",
         "https://www.perplexity.ai/*",
         "https://grok.com/*",
-        "https://x.com/*",
+        "https://x.com/i/grok*",
         "https://chat.deepseek.com/*"
-      ]
+      ],
+      "js": [
+        "lib/capsule.js",
+        "lib/hosts.js",
+        "lib/files.js",
+        "ui/card.js",
+        "content/launcher.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/share/*",
+        "https://chat.openai.com/share/*"
+      ],
+      "js": [
+        "content/share-tap.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
     }
-  ]
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
 }

@@ -1,7 +1,0 @@
-{
-  "description": "ChatGPT: long conversation with code, tables, and links",
-  "url": "https://chatgpt.com/c/long-123",
-  "html": "<main><div data-message-author-role=\"user\"><p>Build me a REST API with FastAPI. Must use SQLite. No ORM.</p></div><div data-message-author-role=\"assistant\"><div class=\"markdown\"><p>Here is the setup:</p><pre><code class=\"language-python\">from fastapi import FastAPI\nimport sqlite3\napp = FastAPI()\n</code></pre><table><thead><tr><th>Route</th><th>Method</th></tr></thead><tbody><tr><td>/items</td><td>GET</td></tr><tr><td>/items</td><td>POST</td></tr></tbody></table></div></div><div data-message-author-role=\"user\">Add error handling.</div><div data-message-author-role=\"assistant\"><pre><code class=\"language-python\">from fastapi import HTTPException\n@app.get('/items/{id}')\ndef get_item(id: int):\n    raise HTTPException(status_code=404)\n</code></pre></div></main>",
-  "expectedRoles": ["User", "Assistant", "User", "Assistant"],
-  "expectedCount": 4
-}

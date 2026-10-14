@@ -1,7 +1,0 @@
-{
-  "description": "Gemini: longer conversation with multiple turns",
-  "url": "https://gemini.google.com/app/long-456",
-  "html": "<user-query><div class=\"query-text\">Explain recursion.</div></user-query><model-response><message-content><p>Recursion is when a function calls itself.</p></message-content></model-response><user-query><div class=\"query-text\">Give me a Python example.</div></user-query><model-response><message-content><pre><code>def factorial(n):\n    if n <= 1: return 1\n    return n * factorial(n-1)</code></pre></message-content></model-response>",
-  "expectedRoles": ["User", "Assistant", "User", "Assistant"],
-  "expectedCount": 4
-}

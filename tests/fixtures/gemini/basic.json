@@ -1,7 +1,0 @@
-{
-  "description": "Gemini: basic user-query / model-response",
-  "url": "https://gemini.google.com/app/basic-001",
-  "html": "<user-query><div class=\"query-text\">What is 10 divided by 2?</div></user-query><model-response><message-content>10 divided by 2 is <strong>5</strong>.</message-content></model-response>",
-  "expectedRoles": ["User", "Assistant"],
-  "expectedCount": 2
-}

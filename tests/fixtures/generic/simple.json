@@ -1,8 +1,0 @@
-{
-  "description": "Generic: simple unknown site with recognisable class names",
-  "url": "https://example.org/chat",
-  "html": "<div class=\"chat-container\"><div class=\"user-message\">Hello, can you help me?</div><div class=\"assistant-message\">Of course! What do you need?</div><div class=\"user-message\">How do I reverse a string in Python?</div></div>",
-  "expectedRoles": ["User", "Assistant", "User"],
-  "expectedCount": 3,
-  "expectedWarningPattern": "generic reader"
-}
