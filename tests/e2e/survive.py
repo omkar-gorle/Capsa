@@ -56,7 +56,13 @@ async def main():
         ]
         for name,url,closeafter,kind in scen:
             if want and not any(w.lower() in name.lower() for w in want): continue
-            await sw.evaluate("chrome.storage.local.clear()")
+            # after a killed worker the old handle is dead: wake the worker (opening the popup talks to it) and use the current one
+            for _try in range(6):
+                try:
+                    cur=[w for w in ctx.service_workers if eid in w.url]
+                    await cur[-1].evaluate("chrome.storage.local.clear()"); break
+                except Exception:
+                    wk=await popup(); await wk.close(); await home.wait_for_timeout(800)
             pp=await popup()
             await pp.locator("[data-r=link]").fill(url); await pp.locator("[data-r=link]").press("Enter")
             await pp.wait_for_timeout(closeafter*1000)

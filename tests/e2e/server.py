@@ -130,9 +130,47 @@ def gpt_share_embed(n, off):
     tree={"loaderData":{"routes/share.$shareId.($action)":{"sharedConversationId":"abc","serverResponse":{"type":"data","data":{"title":"T","linear_conversation":nodes,"current_node":"n%d"%(n-1)}}}}}
     return nodes,tree
 
+
+METER={"pct":0.42,"n":0}
+import time as _t, json as _j
+def _meter_usage():
+    return {"five_hour":{"utilization":round(METER["pct"]*100),"resets_at":_t.strftime("%Y-%m-%dT%H:%M:%SZ",_t.gmtime(_t.time()+2*3600+17*60))},
+            "seven_day":{"utilization":12,"resets_at":_t.strftime("%Y-%m-%dT%H:%M:%SZ",_t.gmtime(_t.time()+3*86400))},
+            "seven_day_opus":{"utilization":30,"resets_at":None}}
+def _meter_conv():
+    now=_t.time(); iso=lambda x:_t.strftime("%Y-%m-%dT%H:%M:%SZ",_t.gmtime(x))
+    return {"uuid":"conv-mock-0001","model":"claude-sonnet-4-5","current_leaf_message_uuid":"m3","chat_messages":[
+      {"uuid":"m1","parent_message_uuid":"00000000-0000-4000-8000-000000000000","sender":"human","created_at":iso(now-400),"content":[{"type":"text","text":"a"*7600}]},
+      {"uuid":"m2","parent_message_uuid":"m1","sender":"assistant","created_at":iso(now-60),"content":[{"type":"text","text":"b"*3800}]},
+      {"uuid":"m3","parent_message_uuid":"m2","sender":"human","created_at":iso(now-30),"content":[{"type":"text","text":"c"*380}]}]}
+METERPAGE="""<html><head><title>Meter test - Claude</title></head><body style="background:#222;color:#eee"><main>
+<div data-testid="user-message"><p>hello</p></div><div class="font-claude-response"><p>hi there</p></div>
+<button id="send">send</button><div id="log"></div><div class="ProseMirror" contenteditable="true" style="border:1px solid #888;min-height:40px"></div></main>
+<script>
+document.cookie="lastActiveOrg=org-mock-1234; path=/";
+fetch('/api/organizations/org-mock-1234/chat_conversations/conv-mock-0001?tree=true&rendering_mode=messages').then(r=>r.json()).catch(()=>{});
+document.getElementById('send').onclick=async()=>{const r=await fetch('/api/organizations/org-mock-1234/chat_conversations/conv-mock-0001/completion',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:'x',model:(window.__model||'claude-sonnet-4-5')})});const t=await r.text();document.getElementById('log').textContent='done '+t.length};
+</script></body></html>"""
+
 class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        host=self.headers.get('Host','').split(':')[0]; p=self.path
+        n=int(self.headers.get('Content-Length','0') or 0); self.rfile.read(n)
+        if 'claude' in host and '/completion' in p:
+            METER['pct']+=0.02; METER['n']+=1
+            ev='event: message_limit\ndata: '+_j.dumps({'type':'message_limit','message_limit':{'windows':{'5h':{'utilization':METER['pct'],'resets_at':int(_t.time()+2*3600+17*60)},'7d':{'utilization':0.12,'resets_at':int(_t.time()+3*86400)}}}})+'\n\n'+'event: content_block_delta\ndata: {"type":"content_block_delta"}\n\n'
+            b=ev.encode(); self.send_response(200); self.send_header('Content-Type','text/event-stream'); self.send_header('Content-Length',str(len(b))); self.end_headers(); self.wfile.write(b); return
+        b=b'{}'; self.send_response(404); self.send_header('Content-Length','2'); self.end_headers(); self.wfile.write(b)
     def do_GET(self):
         host=self.headers.get("Host","").split(":")[0]; p=self.path
+        if "claude" in host and p.startswith("/api/organizations/") and "/usage" in p:
+            b=_j.dumps(_meter_usage()).encode(); self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
+        if "claude" in host and p.startswith("/api/organizations/") and "/chat_conversations/" in p:
+            b=_j.dumps(_meter_conv()).encode(); self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
+        if p.startswith("/__meter?pct="):
+            METER["pct"]=float(p.split("=")[1]); b=b"ok"; self.send_response(200); self.send_header("Content-Length","2"); self.end_headers(); self.wfile.write(b); return
+        if "claude" in host and p.startswith("/chat/conv-mock"):
+            b=METERPAGE.encode(); self.send_response(200); self.send_header("Content-Type","text/html"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if "chatgpt" in host and p.startswith("/backend-api/thread/"):
             n=GPT["n"]; off=GPT["off"]; items=[]
             for i in range(n):
@@ -166,12 +204,32 @@ class H(http.server.BaseHTTPRequestHandler):
             if SHARE_N.get("api")==0:
                 b=b'{"error":"nope"}'; self.send_response(404); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
             off=SHARE_N.get("off",0)
+            variant=SHARE_N.get("variant","dense")
+            if variant!="dense":
+                n=SHARE_N["n"]; out=[]
+                for i in range(n):
+                    sender="human" if (i+off)%2==0 else "assistant"; t=_mk_text(i,off)
+                    e={"uuid":"u%03d"%i,"index":i,"sender":sender,"text":t,"content":[{"type":"text","text":t}],"parent_message_uuid":("00000000-0000-4000-8000-000000000000" if i==0 else "u%03d"%(i-1))}
+                    if variant=="gappy-index": e["index"]=i*3+5
+                    out.append(e)
+                if variant=="tools":
+                    ex=[]
+                    for i,e in enumerate(out):
+                        ex.append(e)
+                        if i%6==2: ex.append({"uuid":"t%03d"%i,"index":e["index"],"sender":"assistant","text":"","content":[{"type":"tool_use","name":"x"}],"parent_message_uuid":e["uuid"]}); 
+                    # keep chain consistent: next real message's parent is the tool entry
+                    for k in range(1,len(ex)):
+                        ex[k]["parent_message_uuid"]=ex[k-1]["uuid"]
+                    out=ex
+                if variant=="missing": del out[len(out)//2]
+                b=json.dumps({"snapshot_name":"x","chat_messages":out}).encode(); self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
             msgs=[{"uuid":"m%d"%i,"index":i,"sender":"human" if (i+off)%2==0 else "assistant","text":_mk_text(i,off),"content":[{"type":"text","text":_mk_text(i,off)}],"created_at":"2026-01-01T00:00:00Z"} for i in range(SHARE_N["n"])]
             b=json.dumps({"snapshot_name":"x","chat_messages":msgs}).encode(); self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if "claude" in host and p.startswith("/share/"):
             q=_up.parse_qs(_up.urlparse(p).query)
             SHARE_N["n"]=int((q.get("n") or ["60"])[0]); SHARE_N["off"]=1 if (q.get("first") or [""])[0]=="assistant" else 0
             SHARE_N["api"]=0 if (q.get("api") or ["1"])[0]=="0" else 1
+            SHARE_N["variant"]=(q.get("variant") or ["dense"])[0]
             html = VIRT if (SHARE_N["api"]==0 and (q.get("opaque") or ["0"])[0]!="1") else SHARE
         elif "/login" in p: html="<html><body><h1>Sign in</h1></body></html>"
         elif p.startswith("/slow"): 

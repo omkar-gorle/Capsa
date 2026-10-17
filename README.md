@@ -1,238 +1,146 @@
-# Capsa
+# Capsa 6 — move your AI work
 
-Capsa is a browser extension that helps you save useful AI conversation context, compress it into a portable capsule, and continue the work on another supported AI chat without manually rebuilding everything from memory.
+Capture a chat → shrink it into a capsule → continue on any AI. Everything stays on your device.
 
-It is designed for the common workflow where a long discussion, design decision, code draft, or research thread is spread across a single chat session or between separate chat tools. Capsa reads the accessible chat content in the browser, validates what it can safely capture, and turns it into a compact text package that can be copied, saved, or inserted into a supported destination.
+## Install
+1. `chrome://extensions` → turn on **Developer mode**
+2. **Load unpacked** → pick this folder
+3. Open ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok or DeepSeek — a floating capsule orb appears (bottom-right, draggable).
 
-## Table of contents
+## Use
+- **Tap the floating scroll** → tap the big scroll in the card → it unrolls and scans the chat, then stamps a seal when done.
+- **Paste a chat link** (anywhere, any tab) → Capsa opens it in a hidden tab, reads it, closes it. Pasting a valid link starts capture automatically. You must be signed in to that AI in Chrome for private chats.
+- Pick a size: **Compact · Standard · Extended · Smart · Full**.
+- **Add files, a folder or a .zip** (button, or drag onto the card). Text and code are read and compressed into the context with the chat; binaries are listed by name only; `.env`, keys and anything that looks like a secret are never read; `node_modules`, `.git`, lock files and build folders are skipped. Limits: 300 files, 2 MB per file, 25 MB per add, no password-protected or Zip64 archives.
+- **Copy**, **Insert here** (types it into the chat box of the tab you're on), or **Save .md**.
+- Your last capture is remembered, so you can capture on one AI, switch tabs, and insert on another.
+- The toolbar icon opens the same card as a popup (also works on non-AI pages for link capture). Toggle the floating orb in the card footer.
 
-- [Problem statement](#problem-statement)
-- [Features](#features)
-- [How Capsa works](#how-capsa-works)
-- [Architecture and data flow](#architecture-and-data-flow)
-- [Technology stack](#technology-stack)
-- [Prerequisites](#prerequisites)
-- [Installation for end users](#installation-for-end-users)
-- [Developer setup](#developer-setup)
-- [Usage guide](#usage-guide)
-- [Configuration and permissions](#configuration-and-permissions)
-- [Testing and verification](#testing-and-verification)
-- [Troubleshooting and limitations](#troubleshooting-and-limitations)
-- [Security and privacy](#security-and-privacy)
-- [Contributing](#contributing)
-- [Roadmap](#roadmap)
-- [License and acknowledgements](#license-and-acknowledgements)
+## What changed from 5.1
+See the table in the hand-off notes: required site permissions instead of optional-and-never-requested, a UI whose markup actually matches its code, working link capture, one shared card for popup and orb, and the optional AI-provider / profile / files / encryption / history features removed.
 
-## Problem statement
+## Long chats: whole means whole
+- **No fixed scroll count.** The reader keeps loading older history until the chat has been quiet for longer than the slowest load it has seen (it watches the page change, not a timer), waits out spinners, and clicks nothing it shouldn't. A 25-minute safety net exists only for a stuck page.
+- **It proves it.** A capsule is made only if all of these hold: it reached the very top and nothing more loads · it reached the end · two independent passes (different direction and step size) found the same messages in the same order · no scroll step landed on content that didn't overlap the last · no gap between messages big enough to hide one · turn numbers are consecutive where the site has them · it finished in time.
+- **If it can't prove it,** no capsule is made. The card lists exactly which check failed, with **Retry** and **Use anyway** (the capsule is then clearly marked as not verified).
+- **Pasted links:** read in a hidden tab first. If the site won't render/load while hidden, Capsa moves it to a visible window, says so on the card and on a banner inside that window, and closes it when done.
+- Verified in a real browser against 120, 240 and 520-message chats (virtualized, lazily loaded, slow, with spinners, with many identical messages) and against chats with deliberately missing messages.
 
-AI chats are useful, but they are not always easy to move between sessions, tabs, or tools. A user may hit usage limits, switch from one provider to another, or lose context when a conversation is no longer visible or the current interface is not convenient for continuing the task.
+Run the long-chat suite: `tests/e2e/long.py` (see `tests/e2e/README.md`).
 
-Capsa addresses that problem by making capture and handoff explicit and transparent. It does not promise to recover hidden or unavailable platform data, and it intentionally refuses to produce a capsule when the chat cannot be verified. The extension focuses on the content that is actually accessible in the browser and the supported AI sites it deliberately supports.
+## Privacy
+Files you add never leave your device either. No network calls of its own. The only page Capsa ever opens is a link you paste. Permissions: the seven AI sites above, `activeTab`, `scripting`, `storage`, `clipboardWrite`, `unlimitedStorage` (long chats).
 
-## Features
+## Develop
+    node tests/run.js        # manifest, link validation, rendering
+    tests/e2e/               # real-Chromium test against mock Claude/ChatGPT pages
 
-- Verified whole-chat capture for supported AI pages
-  - Capsa reads the visible conversation history, follows lazy-loading behavior, and only creates a capsule after independent verification checks agree.
-- Link-based capture
-  - Paste a supported chat URL and Capsa opens it in a hidden or visible tab, captures it, and closes the page when the work is done.
-- Capsule generation and size modes
-  - The generated result can be rendered in compact, standard, extended, smart, and full modes depending on the user’s needs and token budget.
-- File and folder import safety
-  - Text, code, and archive content can be added to the same capsule, while secret-like files, build output, and unsafe paths are skipped or flagged.
-- Copy, insert, and export flows
-  - The final capsule can be copied to the clipboard, inserted into the active chat textbox, or saved as a Markdown file.
-- Local-only processing
-  - Capsa stores its working state in the browser and operates without a separate backend service.
-- Fallback handling for incomplete reads
-  - If the conversation cannot be proven complete, the extension keeps the raw data in a pending state and presents a clear “not verified” path instead of silently producing misleading output.
-- Supported site coverage
-  - The extension explicitly supports ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, and DeepSeek via host permissions and URL validation rules in [lib/hosts.js](lib/hosts.js).
+Layout: `background.js` (all page work) · `ui/card.js` (the card) · `content/launcher.js` (floating orb) · `content/capture-runtime.js` (per-site readers) · `lib/capsule.js` (compression) · `lib/hosts.js` (site + link rules).
 
-## How Capsa works
+## Captures survive closing the popup
 
-1. The user opens a supported AI conversation or pastes a supported URL.
-2. Capsa validates the page or URL and checks whether it is a supported site and a valid chat session.
-3. The browser-side reader captures the accessible messages and metadata, including attachment references where available.
-4. Capsa verifies the read against the page’s own scrolling and loading behavior before creating a capsule.
-5. The user reviews the result, then copies, inserts, exports, or saves it for the next workflow.
-6. The user continues the work in another supported AI chat using the generated context.
+Chrome closes a toolbar popup the moment focus leaves it, and may stop an idle background worker. So a capture is a
+background **job**: the card only starts it, and the outcome (verified capsule, "not verified" panel with
+Retry / Use anyway, or an error) is written to storage. Any card you open later picks it up — nothing is lost, and
+the toolbar icon shows `…` while reading, `✓` when done, `!` when it needs you. A **Cancel** button stops a read.
+If Chrome kills the worker mid-read, the next start marks the job "interrupted" and the card offers Retry.
+Tested by `tests/e2e/survive.py`.
 
-This workflow is intentionally defensive. If the content is incomplete or the page doesn’t satisfy the validation checks, Capsa refuses to mark it as verified and tells the user exactly why.
 
-## Architecture and data flow
+## How the capsule understands a conversation (6.5)
 
-The project is split into a small set of browser-extension layers:
+`lib/understand.js` turns a chat into a structured model, in four separate stages:
 
-- [background.js](background.js) coordinates capture jobs, background work, link handling, progress reporting, and browser storage.
-- [content/capture-runtime.js](content/capture-runtime.js) runs on supported pages to read conversation data and verify that the chat was fully captured.
-- [content/launcher.js](content/launcher.js) creates the floating orb or widget used to open the Capsa card.
-- [content/share-tap.js](content/share-tap.js) handles share-page readers for supported share links.
-- [ui/card.js](ui/card.js) renders the main card UI and orchestrates actions such as capture, verification, copy, and save.
-- [ui/popup.html](ui/popup.html) and [ui/popup.js](ui/popup.js) provide the toolbar popup interface.
-- [lib/capsule.js](lib/capsule.js) builds the compact payload and renders it in multiple output modes.
-- [lib/files.js](lib/files.js) handles file import, zip extraction, secret filtering, and size limits.
-- [lib/hosts.js](lib/hosts.js) defines supported AI sites and validates pasted URLs.
-- [lib/verify.js](lib/verify.js) enforces the verification logic used to decide whether a full capture is trustworthy.
-- [lib/share-rsc.js](lib/share-rsc.js) extracts structured data from share-page payloads.
+1. **extract** — goals, requirements, prohibitions, decisions, corrections, errors, fixes, tasks, technical details
+   (commands, versions, test results) and references (links, files, folders, screenshots). Nothing is dropped here.
+2. **resolve** — chronology. A correction supersedes only what it clearly refers to; "I said no X" reinforces the rule
+   the assistant broke (and records the failed attempt); "you can … only for Y" becomes an exception, not a deletion;
+   a later plain repeat is reinforcement, never an override; unclear cases go to an UNCLEAR section instead of being guessed.
+3. **rank** — importance tiers: (1) constraints, prohibitions, final decisions; (2) goal; (3) state, corrections,
+   blockers, next action; (4) technical details; (5) rationale/history; (6) noise, never emitted.
+4. **generate / verify** — fits a token budget by dropping the lowest tier first (tier 1 is never removed), then checks
+   that the critical items are present and that nothing superseded is shown as active.
 
-```mermaid
-flowchart LR
-    A[User opens AI chat or pastes URL] --> B[Capsa manifest + permissions]
-    B --> C[background.js]
-    C --> D[content capture runtime]
-    D --> E[verification checks]
-    E --> F[build capsule]
-    F --> G[card UI / popup]
-    G --> H[copy / insert / save]
-    H --> I[continue work in supported AI]
-    D --> J[local browser storage]
-```
+Compact / Standard / Extended / Smart use it (`ropts.files` tells it which files are included, so REFERENCES can say
+"INCLUDED" or "NOT included"). **Brief** gives a request for any AI that follows the same structure and rules.
+No new permissions, dependencies or settings; if the module is missing the older extraction is used.
+Known limits: it is keyword-based (unusual phrasing can be missed), and a decision made earlier that only *implicitly*
+depends on a replaced one (e.g. "use hooks" after switching React -> Vue) is not detected as outdated.
 
-The actual content capture happens inside the browser on the page being read. Capsa never relies on a remote API for this step; it reads the page state and returns the text, structured records, and metadata the browser exposes to the extension.
 
-## Technology stack
+## Key notes (6.6) — a hand-over, not a transcript
 
-Capsa is built primarily as a Chromium extension using the browser’s native extension APIs:
+Built for the moment a session runs out of tokens half-way through a job. The top of every capsule is now **KEY NOTES**
+(`lib/notes.js`), written like the notes you would leave a colleague who takes over:
 
-- Manifest V3 browser extension
-- JavaScript modules and browser scripting APIs
-- `chrome.storage.local` for persisted local state
-- `chrome.scripting.executeScript` for runtime capture and validation
-- DOM-based extraction for supported chat interfaces
-- Node.js test runner for static validation and regression checks
+- **About** — what is being built, plus the topic words that recur.
+- **Progress so far** — one line per exchange: what I asked → the *result* (the sentence that reports an outcome, never the
+  "I'll start by…" plan sentence).
+- **Where it stopped** — read from the last assistant message: what it had *just finished* and what it was *in the middle of*
+  (e.g. "stress-testing a 400-message chat"). If the chat ends on *my* message, it says that message was never answered.
+- **Still open / asked but not confirmed** — requests judged from the whole turn (the reply and my next message), so finished
+  work is no longer listed as pending, and a later complaint turns "done" into "reported not working".
+- **Do first** — the interrupted job beats everything else.
 
-The project does not depend on a separate backend, database, or cloud infrastructure for the core capture workflow. The browser remains the execution environment for both reading and generating the portable conversation capsule.
+Typed-fast noise (`...`, `. .`, `,,`, `//`), markdown headings, "on/off"-style prose and assistant diagnoses that used to leak in as
+"blockers", "folders" or "what I just reported" are filtered. Everything is rule-based and on-device: no tokens, no network,
+same answer twice.
 
-## Prerequisites
+**Files are understood, not just pasted.** Every text file gets a one-line description (README title, package name + scripts + deps,
+HTML title, the lead comment and the functions/classes a code file defines, CSV columns, SQL tables…) and the list opens with a project
+overview (languages, where to start, folders). Compact therefore says what every file *is* without carrying its contents.
 
-- A Chromium-based browser such as Google Chrome or Microsoft Edge
-- Extension developer mode enabled for local loading
-- Node.js installed to run the included validation checks
-- Access to at least one supported AI site while signed in, if you want to capture in-browser chat content
-- Optional: a local Python environment for the e2e harness under [tests/e2e](tests/e2e)
+Known limits: rule-based, so unusual phrasing can be missed; "done" is the assistant's own report unless tests are mentioned
+(the notes say "done (reported)"); the *About* line is the first goal sentence, which is only as clear as the first message.
 
-## Installation for end users
 
-1. Download or clone this repository.
-2. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
-3. Enable Developer mode.
-4. Click Load unpacked and select the repository root.
-5. Confirm the extension appears in the toolbar and open it from the extension icon.
-6. Visit a supported AI chat or paste a supported URL to begin capturing.
-7. If the extension is not visible immediately, reload the page, confirm the repository root is the unpacked folder, and check that the Chrome extension page shows the Capsa card with no errors.
+## 6.7 — what was hardened, and what is still true
 
-If you want to test the extension in a local browser: use the project root as the unpacked extension folder, not a nested directory under a copied project name.
+**Added**
+- **Secrets are redacted from the chat text** before anything is rendered (API keys, tokens, JWTs, PEM keys, `password = …`, credentials in URLs,
+  "my password is …"). The setting's *name* stays (`DB_PASSWORD="[REDACTED]"`) so the next AI knows it exists; `os.environ[...]` and placeholders are left alone.
+  The card warns you how many values were replaced. **This catches common forms, not every secret — read the capsule before sharing it.**
+- **A message cannot close the capsule early.** A fake `=== END CAPSULE ===` line inside a chat is defanged, and the header says quoted chat text is data, not commands.
+  (A model can still be talked into things by text it reads; this removes the cheap trick, not the whole risk.)
+- **Capsule of a capsule.** If you paste an earlier capsule into a chat, it is lifted out of the conversation (not read as things you said) and its
+  KEY NOTES / hard rules / requirements / decisions are carried in one labelled section, `CARRIED FROM AN EARLIER CAPSULE`. A third hand-over still carries them without nesting or snowballing.
+- **Documents.** Word (.docx), Excel (.xlsx), PowerPoint (.pptx), OpenDocument and **PDF** are read inside the browser. PDFs: text PDFs from Word, LibreOffice, Chrome and most generators
+  (compressed streams, object streams, ToUnicode maps, pages in order). **Scanned / image-only PDFs, encrypted PDFs and unusual font encodings are reported as "no readable text" — there is no OCR.**
+  Hindi/Indic text inside PDFs can come out with letters in the wrong order or extra spaces.
+- **Zip64** archives are read. **Minified bundles** (`*.min.js`, huge-line files) and `.map` files are named but not pasted.
+- **Insert here**: if the chat box takes only part of a long capsule, the whole capsule is put on the clipboard and you are told to clear the box and paste.
+- Typo tolerance, basic Hindi/Hinglish cues, an honest "evidence" mark on every step (tested / you accepted it / you moved on / not confirmed / you said it failed),
+  code carried (latest version per file), a "NOT IN THIS CAPSULE" list, and a corpus of varied chats in `tests/corpus.js`.
 
-A simple first-run check is to open a supported chat page, click the Capsa icon, and confirm the card opens with the expected black UI. Then paste a valid URL and verify that the job begins and either shows a verified capsule or a clear “not verified” reason instead of silently failing.
+**Still true — read this before you rely on it**
+- **Not tested on the live sites.** The browser tests run against mock Claude/ChatGPT pages. The seven sites change their markup; expect readers to break sometimes.
+  If a capture fails or looks short, the card says why and refuses to call it complete.
+- **The notes are rule-based**, not understanding. They are good at "what was asked, what was reported done, where it stopped"; weak at nuance, sarcasm, long-range reasoning, and any
+  language other than English / basic Hinglish. "Done" always means *someone said so* — the evidence marks tell you how strongly.
+- **Lossy by design.** Reasoning, tool output, images, Claude artifacts/canvas and edited/regenerated branches are not carried (the capsule says which counts it saw). Missing detail → the next AI is told to ask, not invent.
+- **Images are not read** (no OCR). Password-protected zips/PDFs are not read.
+- **Token counts are estimates**, not a real tokenizer; some chat boxes cap pasted length.
+- **Chrome desktop only**, loaded unpacked (developer mode). Not on mobile, Firefox or Safari.
 
-## Developer setup
 
-```bash
-git clone https://github.com/omkar-gorle/Capsa.git
-cd Capsa
-node tests/run.js
-```
+## 6.8 — the Meter (claude.ai) and one-click hand-off
 
-The repo does not define a package build pipeline or a separate application server. Development is centered on the browser extension files at the root and the validation suite under [tests](tests).
+A small pill at the bottom-left of **claude.ai** (the orb stays bottom-right). Click it to open the panel; ✕ hides it (a tiny ◐ handle stays to bring it back).
 
-## Usage guide
+| Shows | Where it comes from |
+|---|---|
+| **Session (5 h) and weekly (7 d) usage**, bars turn red at 90%, a tick marks how far through the window you are, **live reset countdowns** | claude.ai's own `/usage` call plus the live `message_limit` event in each reply's stream (exact, unrounded) |
+| **Weekly by model** | the per-model lines claude.ai reports, plus a count of the replies *this browser* saw per model in the last 7 days |
+| **This chat vs the 200k window** | the conversation claude.ai already loaded, counting only the branch on screen; tokens are an **estimate** (no public Claude tokenizer) |
+| **Prompt-cache countdown** | 5 minutes after the last assistant message |
+| **Replies left (~)** | learned from *your own* replies: how many session-% each one cost on this model, per 1k tokens of chat, scaled to the chat you are in. Needs ≥3 replies on a model to be called an estimate; before that it says it is learning. Opus is assumed to cost more than Sonnet only until it has seen your Opus replies |
+| **Hand off → ChatGPT / Gemini / Grok** | reads the whole chat with the usual verified capture, builds a Standard capsule (secrets redacted), opens the site and puts the capsule in its chat box. If the chat can't be verified, **nothing is handed off** |
 
-1. Open the extension from the toolbar or use the floating widget on a supported AI page.
-2. Visit a supported AI chat or paste an eligible chat URL in any tab.
-3. Review the card and allow the capture to progress.
-4. If the read validates, the extension creates a verified capsule. If the page cannot be proven complete, the job remains pending and clearly marked as not verified.
-5. Choose from the available actions: copy, insert into the active chat box, save as Markdown, or create another capture.
-6. Continue the work in another supported AI chat by pasting the generated context into the destination.
+How it works: `content/meter-tap.js` runs in the page's own world and *observes* three kinds of response claude.ai already receives (usage stream event, conversation tree, start of a reply); `content/meter.js` draws the panel; `lib/meter.js` is the tested logic.
+It contacts **claude.ai only**, with your signed-in session, and never uploads anything. Usage-window parsing follows the MIT-licensed *Claude Counter* extension (see `THIRD_PARTY_NOTICES.md`).
 
-Not every AI platform exposes the same DOM structure, and some share pages or private sessions may not be accessible without valid login state. Capsa refuses to claim a conversation is complete when it cannot verify the data.
+**Honest limits.** These rely on claude.ai's *unofficial* endpoints and event names; if Anthropic renames them the bars show "couldn't read usage" instead of wrong numbers, and the Meter needs an update.
+It was tested against a mock claude.ai only. "Replies left" is a rule of thumb from few samples, not a promise. The hand-off needs you to be signed in to the target site; if its chat box doesn't accept the text, the capsule is kept and Capsa's card there offers Copy / Insert.
+After updating, reload open claude.ai tabs once.
 
-## Configuration and permissions
-
-The manifest requests the following browser permissions:
-
-- `activeTab` — allows the extension to act on the currently active tab when the user asks to capture, insert, or read the page.
-- `scripting` — allows runtime injection for reading the DOM and performing validation.
-- `storage` — stores the last capsule, pending work, and job state in the browser.
-- `clipboardWrite` — copies the generated capsule to the system clipboard.
-- `unlimitedStorage` — helps support long chats or larger pending data.
-
-Host permissions are explicitly granted to the supported AI sites listed in [manifest.json](manifest.json): ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, and DeepSeek. These permissions are required to read the page content the extension is designed to support.
-
-The extension does not request broad host access or a blanket `<all_urls>` permission, and the validation suite checks for that requirement.
-
-## Testing and verification
-
-The project includes a Node-based regression suite in [tests/run.js](tests/run.js). It validates:
-
-- manifest structure and file references
-- supported URL validation
-- rendering of compact and full capsule modes
-- zip and file filtering rules
-- verification logic for incomplete chats
-- attachment handling and secret detection
-
-Run it with:
-
-```bash
-node tests/run.js
-```
-
-For browser-level validation, the repo includes the e2e suite under [tests/e2e](tests/e2e). It covers longer conversations, popup-close survival, and mocked site behavior against a real Chromium workflow. These scripts are valuable for checking interaction and page behavior that a static Node script cannot fully model.
-
-The expected local command output is a clean pass from the Node test runner. If a site-specific or browser-specific test cannot execute in your environment, the README should reflect that as an environment limitation rather than as a passing result.
-
-## Troubleshooting and limitations
-
-- Extension fails to load
-  - Ensure the extension is loaded from the repository root and not from a nested folder.
-- Chat URL is unsupported
-  - Confirm the URL belongs to a supported AI site and uses HTTPS.
-- Capture produces an incomplete result
-  - This often means the chat is still loading, the page is a protected or unsupported surface, or the validation checks were not satisfied.
-- Browser permissions are missing
-  - Re-open the extension management page and confirm the required extension permissions are allowed.
-- Export or insert fails
-  - The page may have lost focus or the active element may not be a supported chat composer.
-- Very large context or long chats
-  - Capsa narrows the final output by mode and budget, but fully verifying a very large or lazy-loaded chat still depends on browser access and page behavior.
-
-Capsa is intentionally conservative. It is designed to prefer a failed or unverified capture over a misleading one.
-
-## Security and privacy
-
-Capsa processes browser-visible conversation content and user-supplied files only inside the browser. The extension stores its state locally in the browser storage area rather than sending a site’s conversations to a backend service.
-
-The code explicitly filters sensitive content before rendering it in a capsule. The file-import logic skips likely secrets such as `.env` files, private key text, `node_modules`, `.git`, build folders, and lockfiles. Unsafe archive paths are also rejected.
-
-The extension does not claim to recover hidden content that is not available to the page or to the browser. Users should keep in mind that platform access, page rendering, and auth state all affect what a browser can read.
-
-## Contributing
-
-If you want to contribute, follow the standard Git workflow:
-
-```bash
-git checkout -b feature/my-change
-# edit the relevant files
-git add .
-git commit -m "fix: describe the change"
-git push origin feature/my-change
-```
-
-Before opening a pull request, run the project checks and keep the change focused on a single improvement or bugfix. Clear commit messages and small diffs are preferred.
-
-## Roadmap
-
-Planned improvements are intentionally limited and should be treated as future work rather than guarantees of current functionality:
-
-- Additional supported AI sites, if the project expands its allowed host set
-- More granular reporting for unverified reads and partial captures
-- Additional file-type handling for specific developer workflows
-- Improved UX for large or long-running reads
-
-The current implementation is centered on proving that supported chats can be captured safely and transferred in a usable form.
-
-## License and acknowledgements
-
-This repository includes the project’s license in [LICENSE](LICENSE). Please read that file for the terms under which the software may be used, modified, and redistributed.
-
-The project is an extension-focused tool built for browser-based AI work. It is designed to help users preserve context without requiring a centralized service or a platform-specific backend.
+**Not part of Capsa:** no-code form building, ledger/voucher accounting and approval flows are Claude product/connector features (they need a server-side integration and the provider's own permissions model), not something a browser extension that only reads chats can add.

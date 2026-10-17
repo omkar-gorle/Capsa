@@ -713,7 +713,7 @@
     if (!scrollable) return { reachedTop: true, settled: true, changes: 0, loadMore: loadMoreVisible(scroller) };
     const t0 = Date.now();
     let lastSig = "", lastChange = t0, maxGap = ctl.latency, changes = 0, busyFor = 0, settled = false;
-    const base = 3000 * ctl.patience;
+    const base = (ctl.historyDone ? 1400 : 3000) * ctl.patience;   // history already loaded in an earlier round: don't wait as long
     for (;;) {
       ctl.check();
       scroller.scrollTop = 1; await sleep(60); scroller.scrollTop = 0; // a small wiggle re-fires "reached the top" handlers
@@ -731,6 +731,7 @@
       }
     }
     ctl.latency = Math.max(ctl.latency, maxGap);
+    ctl.historyDone = settled && scroller.scrollTop <= 2;
     return { reachedTop: scroller.scrollTop <= 2, settled, changes, loadMore: loadMoreVisible(scroller) };
   }
 
@@ -906,7 +907,7 @@
     const vh = Math.max(200, scroller.clientHeight || window.innerHeight || 600);
     const read = () => snapshot(adapter, scroller).messages;
     const passes = [], keep = [];
-    const FACTORS = [0.55, 0.8, 0.65, 0.85, 0.5, 0.75];
+    const FACTORS = [0.78, 0.62, 0.85, 0.7, 0.5, 0.8];
     let ev = null, hist = null, virtualized = false, lastPassEnded = true;
 
     try {
@@ -1010,6 +1011,7 @@
   //  (same origin, your own browser session), it is the complete conversation by construction — no scrolling,
   //  nothing to miss. Anything unexpected returns null and the normal page reader takes over.
   // ---------------------------------------------------------------
+  let lastShareApiReport = null;
   async function shareApi() {
     if (!/(^|\.)claude\.ai$/.test(location.hostname)) return null;
     const m = location.pathname.match(/^\/share\/([0-9a-f-]{16,})/i);
@@ -1019,9 +1021,10 @@
       const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 20000);
       const res = await fetch("/api/chat_snapshots/" + m[1] + "?rendering_mode=messages&render_all_tools=true", { credentials: "include", signal: ac.signal, headers: { accept: "application/json" } });
       clearTimeout(t);
-      if (!res.ok) { shareApi.failed = (shareApi.failed || 0) + 1; return null; }
+      if (!res.ok) { lastShareApiReport = { status: "http-" + res.status }; shareApi.failed = (shareApi.failed || 0) + 1; return null; }
       const data = await res.json();
       const arr = Array.isArray(data) ? data : (data && (data.chat_messages || data.messages || (data.snapshot && data.snapshot.chat_messages))) || null;
+      lastShareApiReport = { status: Array.isArray(arr) ? "ok" : "unexpected-shape", topLevelKeys: data && typeof data === "object" && !Array.isArray(data) ? Object.keys(data).slice(0, 40) : [], entries: Array.isArray(arr) ? arr.length : 0, entryKeys: Array.isArray(arr) && arr[0] && typeof arr[0] === "object" ? Object.keys(arr[0]).slice(0, 40) : [] };
       if (!Array.isArray(arr) || !arr.length) { shareApi.failed = (shareApi.failed || 0) + 1; return null; }
       const textOf = (x) => {
         if (typeof x.text === "string" && x.text.trim()) return x.text;
@@ -1030,31 +1033,62 @@
         return "";
       };
       const sorted = arr.slice();
-      if (sorted.every((x) => typeof x.index === "number")) sorted.sort((a, b) => a.index - b.index);
-      const messages = [];
+      if (sorted.every((x) => x && typeof x.index === "number")) sorted.sort((a, b) => a.index - b.index);
+      // Account for EVERY entry: kept with text, kept as a short placeholder (tool use / thinking / image-only turns),
+      // or skipped for a stated reason. Nothing may vanish silently.
+      const messages = [], skipped = {}, placeholders = {};
+      const bump = (o, k) => { o[k] = (o[k] || 0) + 1; };
       for (const x of sorted) {
+        if (!x || typeof x !== "object") { bump(skipped, "invalid_entry"); continue; }
         const who = String(x.sender || x.role || "").toLowerCase();
         const role = who === "human" || who === "user" ? "User" : who === "assistant" || who === "ai" ? "Assistant" : null;
-        const text = textOf(x).trim();
-        if (!role || !text) continue;
+        if (!role) { bump(skipped, "unrecognized_sender"); continue; }
+        let text = textOf(x).trim();
+        if (!text) {
+          const blocks = Array.isArray(x.content) ? x.content : [];
+          const types = blocks.map((b) => String((b && b.type) || ""));
+          const has = (re) => types.some((t) => re.test(t));
+          const hasFiles = (Array.isArray(x.attachments) && x.attachments.length) || (Array.isArray(x.files) && x.files.length);
+          if (has(/tool|function|action/i)) { text = "[tool use]"; bump(placeholders, "tool"); }
+          else if (has(/thinking|reasoning|thought/i)) { text = "[thinking]"; bump(placeholders, "thinking"); }
+          else if (has(/image|file|document|attachment|audio|video/i) || hasFiles) { text = "[image or attachment]"; bump(placeholders, "attachment"); }
+          else { bump(skipped, "empty"); continue; }
+        }
         messages.push({ role, text, confidence: 1, attachments: [], meta: {} });
       }
-      if (!messages.length) { shareApi.failed = (shareApi.failed || 0) + 1; return null; }
+      const placeholderN = Object.values(placeholders).reduce((n, c) => n + c, 0);
+      const skippedN = Object.values(skipped).reduce((n, c) => n + c, 0);
+      const textual = messages.length - placeholderN;
+      if (!messages.length || textual < 1) { shareApi.failed = (shareApi.failed || 0) + 1; return null; }
       const roles = new Set(messages.map((x) => x.role));
-      const idx = sorted.map((x) => x.index);
-      const numbered = idx.every((n) => typeof n === "number");
-      const consecutive = !numbered || idx.every((n, i) => i === 0 || n === idx[i - 1] + 1);
+      const accounted = messages.length + skippedN === arr.length;
+      // Linked chain (if the data has one): a parent that is nowhere in the data means a message is missing.
+      const uuids = new Set(sorted.map((x) => x && x.uuid).filter(Boolean));
+      const withParent = sorted.filter((x) => x && typeof x.parent_message_uuid === "string" && x.parent_message_uuid);
+      const brokenList = withParent.filter((x) => !uuids.has(x.parent_message_uuid) && !/^0{8}-0{4}-/.test(x.parent_message_uuid));
+      const chainUsed = withParent.length >= 2 && uuids.size >= 2;
+      const chainOk = !chainUsed || brokenList.every((x) => x === sorted[0]);   // only the very first message may point outside (the conversation root)
+      // Declared total, if the data states one.
+      const totalKey = data && typeof data === "object" && !Array.isArray(data) && Object.keys(data).find((k) => typeof data[k] === "number" && /total|count/i.test(k) && /message|chat|snapshot/i.test(k));
+      const declaredOk = !totalKey || data[totalKey] === arr.length;
+      // Message numbering is informational only: real data may skip numbers for entries that aren't messages.
+      const idxs = sorted.map((x) => x && x.index);
+      const numbered = idxs.every((n) => typeof n === "number");
+      const dense = numbered && idxs.every((n, i) => i === 0 || n === idxs[i - 1] + 1);
       const checks = [
         { id: "source", ok: true, detail: "read from the shared page's own data, not by scrolling" },
         { id: "both-sides", ok: messages.length < 3 || roles.size === 2, detail: roles.size === 2 ? "both your messages and the replies are present" : "only one side of the conversation came back" },
-        { id: "numbering", ok: consecutive, detail: numbered ? (consecutive ? "message numbers are consecutive" : "message numbers have gaps") : "messages are not numbered (skipped)" },
+        { id: "accounting", ok: accounted, detail: accounted ? ("every entry accounted for (" + messages.length + " kept" + (placeholderN ? ", " + placeholderN + " as [placeholders]" : "") + (skippedN ? ", " + skippedN + " skipped" : "") + ")") : "some entries in the data are unaccounted for" },
+        { id: "chain", ok: chainOk, detail: chainUsed ? (chainOk ? "each message links to the one before it" : "a message links to a parent that is missing from the data") : "messages are not linked (skipped)" },
+        { id: "declared", ok: declaredOk, detail: totalKey ? (declaredOk ? "the data's own message count matches" : "the data says " + data[totalKey] + " messages but " + arr.length + " came back") : "no message count in the data (skipped)" },
+        { id: "numbering", ok: true, detail: numbered ? (dense ? "message numbers are consecutive" : "message numbers skip (informational; not used)") : "messages are not numbered (skipped)" },
       ];
       const reasons = checks.filter((c) => !c.ok).map((c) => c.detail);
       const verification = { verified: reasons.length === 0, checks, count: messages.length, passes: 1, reasons, source: "api" };
       return {
         site: "Claude", siteId: "claude", url: location.href, title: (document.title || "").replace(" - Claude", "").trim() || "Shared chat",
         conversationId: m[1], method: "api", messages, attachmentManifest: [],
-        coverage: { captured: messages.length, domCount: 0, atTop: true, deep: false, virtualized: false, gaps: consecutive ? 0 : 1, duplicatesRemoved: 0, reachedTop: true, complete: verification.verified },
+        coverage: { captured: messages.length, domCount: arr.length, atTop: true, deep: false, virtualized: false, gaps: chainOk && accounted ? 0 : 1, duplicatesRemoved: 0, reachedTop: true, complete: verification.verified },
         verification, needsVisible: false, visibility: document.visibilityState,
       };
     } catch (e) { shareApi.failed = (shareApi.failed || 0) + 1; return null; }
@@ -1117,7 +1151,7 @@
     return out.slice(-15);
   }
 
-  async function tappedShare(parser) {
+  async function tappedShare(parser, maxWait, allowReplay) {
     const t0 = Date.now();
     let installed = false, seen = 0;
     do {
@@ -1127,9 +1161,10 @@
       let best = null;
       for (const it of tap.items) { const x = parser.fromText(it.text); if (x && (!best || x.messages.length > best.messages.length)) best = x; }
       if (best) return { parsed: best, note: "tap: " + best.messages.length + " messages from " + seen + " responses" };
-      await sleep(1000);
-    } while (Date.now() - t0 < 12000 && document.visibilityState === "visible");
+      await sleep(250);
+    } while (Date.now() - t0 < maxWait && document.visibilityState === "visible");
     if (installed) return { parsed: null, note: "tap: " + seen + " responses, no conversation in them" };
+    if (allowReplay === false) return { parsed: null, note: "tap not installed" };
     let tried = 0, best = null;
     for (const url of pageDataUrls()) {
       try {
@@ -1163,16 +1198,21 @@
     } catch (e) { lastChatgptShare.embedded = "error"; }
     // Route 2: what the page itself downloaded to draw the conversation (kept by share-tap.js from the moment the
     // page started loading). If the tap isn't there (page was open before the extension), ask for the same
-    // same-origin data the page asked for.
-    try {
-      const got = await tappedShare(parser);
-      lastChatgptShare.tap = got.note;
-      if (got.parsed) {
-        const r = chatgptShareResult(got.parsed, "read the conversation from the data this page downloaded to show it");
-        if (r.verification.verified) return r;
-        lastChatgptShare.tap += " (not accepted: " + r.verification.reasons.join("; ") + ")";
-      }
-    } catch (e) { lastChatgptShare.tap = "error"; }
+    // same-origin data the page asked for. A short look first, then the share endpoint, then a longer wait.
+    const tapTry = async (wait, replay) => {
+      try {
+        const got = await tappedShare(parser, wait, replay);
+        lastChatgptShare.tap = got.note;
+        if (got.parsed) {
+          const r = chatgptShareResult(got.parsed, "read the conversation from the data this page downloaded to show it");
+          if (r.verification.verified) return r;
+          lastChatgptShare.tap += " (not accepted: " + r.verification.reasons.join("; ") + ")";
+        }
+      } catch (e) { lastChatgptShare.tap = "error"; }
+      return null;
+    };
+    const quick = await tapTry(2500, true);
+    if (quick) return quick;
     const id = (location.pathname.match(/^\/share\/(?:e\/)?([0-9a-f-]{16,})/i) || [])[1];
     if (!id) return null;
     for (const url of ["/backend-api/share/" + id, "/backend-api/public/share/" + id]) {
@@ -1190,7 +1230,7 @@
         } else lastChatgptShare.api = "unexpected-shape";
       } catch (e) { lastChatgptShare.api = e && e.name === "AbortError" ? "timeout" : "request-failed"; }
     }
-    return null;
+    return await tapTry(10000, false);
   }
 
   // A text-free skeleton of the page (selectors and counts only, never what anyone wrote), so a layout the
@@ -1240,12 +1280,13 @@
         try { hits[sel] = document.querySelectorAll(sel).length; } catch (e) { hits[sel] = -1; }
       }
       return JSON.stringify({
-        capsaReport: 1, readerBuild: "share-v11", host: location.hostname, path: mask(location.pathname), visibility: document.visibilityState,
+        capsaReport: 1, readerBuild: "share-v12", host: location.hostname, path: mask(location.pathname), visibility: document.visibilityState,
         shareSelectorHits: location.hostname === "chatgpt.com" && location.pathname.startsWith("/share/") ? {
           assistantClassRoots: document.querySelectorAll('[class*="DilResponseRoot"], [class*="MarkdownRoot"]').length,
           assistantTextFallback: document.querySelectorAll('[data-markdown-text-style]').length,
           userText: document.querySelectorAll('.text-size-chat.whitespace-pre-wrap').length,
         } : null,
+        claudeShare: lastShareApiReport,
         network: sharePage ? pageDataUrls().map((u) => { try { const x = new URL(u); return mask(x.pathname) + (x.search ? "?" + [...x.searchParams.keys()].join("&") : ""); } catch (_) { return "?"; } }) : null,
         shareData: sharePage ? { scriptCount: scripts.length, flightScripts, parserAvailable: !!self.CapsaShareRsc, parsedMessages: rscCount, shape: self.CapsaShareRsc ? self.CapsaShareRsc.shape(document) : null, tried: lastChatgptShare } : null,
         capture: captureInfo,
@@ -1494,6 +1535,12 @@
       return { grew, verified };
     };
 
+    // The box took only part of a long text: say so AND put the whole thing on the clipboard, so nothing is silently half-pasted.
+    const partialFallback = async (method) => {
+      const cb = await insertViaClipboard(text);
+      return { ok: false, partial: true, method, clipboardFilled: !!cb.clipboardFilled, fallback: "clipboard",
+        error: "The text box only took part of the text (long messages are cut by some chat editors)." + (cb.clipboardFilled ? " The FULL capsule is on your clipboard: clear the box, then paste (Ctrl+V / Cmd+V)." : " Clear the box and use Copy instead.") };
+    };
     // Textarea / input: use native value setter
     if (isField(target)) {
       const proto = target.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -1504,7 +1551,7 @@
       const r = check();
       return r.verified
         ? { ok: true, verified: true, method: "value" }
-        : { ok: false, partial: r.grew > 0, method: "value", error: "The page didn't accept the text." };
+        : r.grew > 0 ? await partialFallback("value") : { ok: false, partial: false, method: "value", error: "The page didn't accept the text." };
     }
 
     // contenteditable: try multiple strategies in order
@@ -1537,7 +1584,7 @@
       await sleep(120);
       const r = check();
       if (r.verified) return { ok: true, verified: true, method: name };
-      if (r.grew > 0) return { ok: false, partial: true, method: name, error: "The text box only took part of the text." };
+      if (r.grew > 0) return partialFallback(name);
     }
 
     // All insertion methods failed — fall back to clipboard
