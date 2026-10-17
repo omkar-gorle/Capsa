@@ -123,9 +123,9 @@
 
 /* result */
 .out{margin-top:10px;display:flex;flex-direction:column;gap:9px;animation:rise .4s cubic-bezier(.3,1.3,.5,1)}
-.seg{--i:1;position:relative;display:grid;grid-template-columns:repeat(5,1fr);background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:3px}
-.seg .thumb{position:absolute;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/5);border-radius:999px;background:var(--grad);transform:translateX(calc(var(--i)*100%));transition:transform .35s cubic-bezier(.3,1.4,.5,1);box-shadow:0 2px 12px rgba(161,45,43,.55)}
-.seg button{position:relative;z-index:1;padding:6px 0;font-size:11px;font-weight:600;color:var(--dim);border-radius:999px;transition:color .2s}
+.seg{--i:1;position:relative;display:grid;grid-template-columns:repeat(6,1fr);background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:3px}
+.seg .thumb{position:absolute;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/6);border-radius:999px;background:var(--grad);transform:translateX(calc(var(--i)*100%));transition:transform .35s cubic-bezier(.3,1.4,.5,1);box-shadow:0 2px 12px rgba(161,45,43,.55)}
+.seg button{position:relative;z-index:1;padding:6px 0;font-size:10px;letter-spacing:-.15px;font-weight:600;white-space:nowrap;color:var(--dim);border-radius:999px;transition:color .2s}
 .seg button[aria-pressed="true"]{color:#f7f6ea}
 .seg button:hover:not([aria-pressed="true"]){color:var(--text)}
 .meta{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--dim);padding:0 4px}
@@ -193,10 +193,11 @@
 
   /* ───────────────────────── markup ───────────────────────── */
   const MODES = [
-    { id: "l0", label: "Compact", tip: "Goal, latest request and open tasks — the fastest handoff", opts: { mode: "l0", level: 0 } },
-    { id: "l1", label: "Standard", tip: "Adds decisions, finished work and the latest code", opts: { mode: "l1", level: 1 } },
-    { id: "l2", label: "Extended", tip: "Adds the most recent messages word-for-word", opts: { mode: "l2", level: 2 } },
+    { id: "l0", label: "Compact", tip: "Small but complete in shape: goal, latest ask, last answer, a timeline, and a numbered list of everything else covered", opts: { mode: "l0", level: 0 } },
+    { id: "l1", label: "Standard", tip: "Adds decisions, finished work, the answer to every earlier ask, and the latest code", opts: { mode: "l1", level: 1 } },
+    { id: "l2", label: "Extended", tip: "Adds the full arc of the chat plus the most recent messages word-for-word", opts: { mode: "l2", level: 2 } },
     { id: "smart", label: "Smart", tip: "Compressed to fit a token budget, most important parts first", opts: { mode: "smart", budget: 8000 } },
+    { id: "brief", label: "Brief", tip: "Smartest: copies a ready-made request (with the whole chat) for any AI. Its answer is a hand-over brief with key points, what to do, and what NOT to do", opts: { mode: "brief" } },
     { id: "full", label: "Full", tip: "Every message, word-for-word — nothing left out", opts: { mode: "lossless", budget: 400000 } },
   ];
 
@@ -236,7 +237,7 @@
             '<button class="act" data-r="dl"><span class="ic">' + I.down + "</span><em>Save .md</em></button>" +
           "</div>" +
         "</section>" +
-        '<div class="ft"><label class="sw"><input type="checkbox" data-r="orbToggle"><i></i>Floating orb</label><span>On-device · nothing uploaded</span></div>' +
+        '<div class="ft"><label class="sw"><input type="checkbox" data-r="orbToggle"><i></i>Floating orb</label><span data-r="ver">On-device · nothing uploaded</span></div>' +
       "</div>"
     );
   }
@@ -289,6 +290,7 @@
     const el = host.querySelector(".cx");
     const r = {};
     el.querySelectorAll("[data-r]").forEach((n) => { r[n.dataset.r] = n; });
+    try { r.ver.textContent = "v" + chrome.runtime.getManifest().version + " · on-device · nothing uploaded"; } catch (e) { /* keep the default text */ }
     const segBtns = [...r.seg.querySelectorAll("button")];
 
     const S = { capsule: null, files: [], mode: "full", busy: false, edited: false, last: null, unv: null, action: null };
@@ -334,12 +336,12 @@
     /* -- render the saved capture -- */
     function modeOpts() {
       const m = MODES.find((x) => x.id === S.mode) || MODES[1];
-      const o = Object.assign({ intent: "resume", clean: true }, m.opts);
+      const o = Object.assign({ intent: "resume", clean: true, files: (S.files || []).map((f) => f && (f.path || f.name)).filter(Boolean) }, m.opts);
       if (m.id === "full") { o.clean = false; if (S.capsule) o.budget = Math.max(8000, L.chatTokens(S.capsule) * 3); }
       return o;
     }
 
-    const FILE_BUDGET = { l0: 0, l1: 2500, l2: 5000, smart: 6000, full: Infinity };
+    const FILE_BUDGET = { l0: 0, l1: 2500, l2: 5000, smart: 6000, brief: 0, full: Infinity };
 
     function verifyNote(c) {
       const v = c && c.verification;
@@ -425,6 +427,7 @@
         const pct = chat > 0 ? Math.max(0, Math.round((1 - res.tokens / chat) * 100)) : 0;
         sv = pct > 0 ? pct + "% smaller than the chat" : "";
       }
+      if (res && res.mode === "brief") sv = "paste into any AI → copy its answer into your new chat";
       r.saved.textContent = sv;
     }
 

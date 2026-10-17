@@ -34,6 +34,11 @@ async def main():
         print("extended tokens:",await pg.locator("capsa-orb [data-r=tok]").inner_text())
         await pg.locator("capsa-orb .seg button[data-m=full]").click(); await pg.wait_for_timeout(500)
         print("full tokens:",await pg.locator("capsa-orb [data-r=tok]").inner_text(), len(await pg.locator("capsa-orb textarea").input_value()))
+        await pg.locator("capsa-orb .seg button[data-m=brief]").click(); await pg.wait_for_timeout(500)
+        bv=await pg.locator("capsa-orb textarea").input_value()
+        print("brief tokens:",await pg.locator("capsa-orb [data-r=tok]").inner_text(), len(bv))
+        assert "HARD RULES — DO NOT" in bv and "AT A GLANCE" in bv and "=== CONVERSATION START ===" in bv and "=== END CAPSULE ===" in bv, "brief request malformed"
+        await pg.screenshot(path=f"{SH}/4-brief.png")
         await pg.locator("capsa-orb .seg button[data-m=smart]").click(); await pg.wait_for_timeout(300)
         print("smart tokens:",await pg.locator("capsa-orb [data-r=tok]").inner_text())
         await pg.locator("capsa-orb .seg button[data-m=l1]").click(); await pg.wait_for_timeout(300)
@@ -65,6 +70,15 @@ async def main():
         pv=await pg.locator("capsa-orb textarea").input_value(); print("extended has file body:", "read_csv" in pv)
         await pg.screenshot(path=f"{SH}/10-files.png")
         os.remove(zp)
+        # --- documents made by real tools: Word, Excel, PowerPoint, PDF (read inside the browser) ---
+        fx=os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","fixtures")
+        await pg.locator("capsa-orb input[data-r=fin]").set_input_files([os.path.join(fx,n) for n in ["plan.docx","costs.xlsx","review.pptx","report.pdf","libreoffice.pdf","scanned.pdf"]])
+        await pg.wait_for_timeout(2500)
+        await pg.locator("capsa-orb .seg button[data-m=full]").click(); await pg.wait_for_timeout(600)
+        pv=await pg.locator("capsa-orb textarea").input_value()
+        print("docs: word", "Budget is 4,000 USD" in pv, "| excel", "Server | 120" in pv, "| pptx", "Churn: 3%" in pv, "| pdf", "expired certificate" in pv, "| libreoffice pdf", "Write tests" in pv, "| scanned flagged", "no readable text" in pv)
+        await pg.screenshot(path=f"{SH}/11-docs.png")
+        await pg.locator("capsa-orb .seg button[data-m=l2]").click(); await pg.wait_for_timeout(400)
         # link capture (chatgpt) from claude page
         await pg.locator("capsa-orb input[data-r=link]").fill("https://chatgpt.com/c/zzz")
         await pg.locator("capsa-orb input[data-r=link]").press("Enter")

@@ -42,6 +42,9 @@ S=[
  ("chatgpt share, data says more (page reader finishes)","chatgpt.com/share/abcdef01-2345-6789-abcd-ef0123456789","n=150&net=1&partial=1","link","verified"),
  ("chatgpt share, page only (drifting rows) 150","chatgpt.com/share/abcdef01-2345-6789-abcd-ef0123456789","n=150","link","verified"),
  ("chatgpt share, page only 60 opens with assistant","chatgpt.com/share/abcdef01-2345-6789-abcd-ef0123456789","n=60&first=assistant","link","verified"),
+ ("claude share, non-consecutive indices","claude.ai/share/abcdef01-2345-6789-abcd-ef0123456789","n=80&variant=gappy-index","link","verified"),
+ ("claude share, tool entries between","claude.ai/share/abcdef01-2345-6789-abcd-ef0123456789","n=80&variant=tools","link","verified"),
+ ("claude share, a message is missing","claude.ai/share/abcdef01-2345-6789-abcd-ef0123456789","n=80&variant=missing&opaque=1","link","unverified"),
  ("share link, site data 150",   "claude.ai/share/abcdef01-2345-6789-abcd-ef0123456789", "n=150",                 "link",  "verified"),
  ("share link, opens with assistant","claude.ai/share/abcdef01-2345-6789-abcd-ef0123456789", "n=150&first=assistant", "link",  "verified"),
  ("share link, data blocked -> page reader","claude.ai/share/abcdef01-2345-6789-abcd-ef0123456789", "n=150&api=0", "link",  "verified"),
@@ -94,7 +97,7 @@ async def main():
                 if via=="link":
                     try: await tgt.close()
                     except Exception: pass
-                got=[norm(t) for t in (res["last"] or [])]; e=[norm(t) for t in exp]
+                got=[norm(t) for t in (res["last"] or []) if not re.fullmatch(r"\[(?:tool use|thinking|image|message)\]", norm(t))]; e=[norm(t) for t in exp]   # placeholder lines mark non-text turns; they are not part of the text comparison
                 missing=[i for i,t in enumerate(e) if t not in got]
                 ok = got==e and bool(res["ver"] and res["ver"]["verified"]) and not vbar
                 detail=f"captured {len(got)}/{len(e)} exact={got==e} missing={missing[:8]} verified={res['ver'] and res['ver']['verified']} passes={res['ver'] and res['ver']['passes']}"

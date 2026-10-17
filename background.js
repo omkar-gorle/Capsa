@@ -3,7 +3,7 @@
    widget stay thin, and so a capture finishes even if the popup closes mid-way.
    Nothing here talks to the network except opening the chat page the user pasted. */
 "use strict";
-importScripts("lib/capsule.js", "lib/hosts.js");
+importScripts("lib/redact.js", "lib/notes.js", "lib/understand.js", "lib/capsule.js", "lib/hosts.js");
 
 const L = self.CapsuleLib;
 const H = self.CapsaHosts;
@@ -391,6 +391,29 @@ async function insertInto(tabId, text) {
   return { ok: true, result: (r && r.result) || { ok: false, error: "No response from the page." } };
 }
 
+/* ---------- hand-off: read the whole chat, then drop the capsule into another AI's box ---------- */
+const HANDOFF = { chatgpt: { name: "ChatGPT", url: "https://chatgpt.com/" }, gemini: { name: "Gemini", url: "https://gemini.google.com/app" }, grok: { name: "Grok", url: "https://grok.com/" } };
+
+async function handoffJob(tabId, targetId, level) {
+  const tgt = Object.prototype.hasOwnProperty.call(HANDOFF, targetId) ? HANDOFF[targetId] : null;
+  if (!tgt) throw new UserError("Unknown hand-off target.");
+  const res = await captureTab(tabId);                                    // same gate as everywhere: no verified read, no capsule
+  if (!res || !res.ok || res.verified === false) return res;
+  const got = await chrome.storage.local.get("last");
+  if (!got.last) throw new UserError("The capture finished but could not be found. Try again.");
+  const r = L.renderCapsule(got.last, { level: level === 2 ? 2 : 1 });
+  if (!r || !r.text) throw new UserError("Nothing to hand off.");
+  report("Opening " + tgt.name + "…");
+  const tab = await chrome.tabs.create({ url: tgt.url, active: true });
+  await waitForLoad(tab.id, 25000);
+  let inserted = false;
+  for (let i = 0; i < 10 && !inserted; i++) {                             // the chat box can take a few seconds to appear
+    await sleep(i ? 1500 : 800);
+    try { const ins = await insertInto(tab.id, r.text); inserted = !!(ins && ins.result && ins.result.ok); } catch (e) { /* page not ready, or signed out */ }
+  }
+  return Object.assign({}, res, { handoff: { target: targetId, inserted, tokens: r.tokens, note: inserted ? "" : "The capsule is saved — open Capsa there and tap Insert or Copy." } });
+}
+
 /* ---------- messages ---------- */
 const progressKey = "progress";
 async function report(text) { try { await chrome.storage.local.set({ [progressKey]: { text, at: Date.now() } }); } catch (e) { /* ignore */ } }
@@ -406,6 +429,9 @@ async function handle(msg, sender) {
       if (!v.ok) throw new UserError(v.error);
       return startJob("link", { type: "link", url: v.url, rt: tabId }, () => captureLink(v.url, tabId));
     }
+    case "handoff":
+      if (!tabId) throw new UserError("No tab to hand off.");
+      return startJob("capture", { type: "capture", handoff: String(msg.target || "") }, () => handoffJob(tabId, String(msg.target || ""), msg.level));
     case "cancelJob":
       return cancelJob();
     case "ackJob": {
@@ -440,6 +466,11 @@ chrome.runtime.onInstalled.addListener(async () => {
     const tabs = await chrome.tabs.query({ url: patterns });
     for (const t of tabs) {
       chrome.scripting.executeScript({ target: { tabId: t.id }, files }).catch(() => {});
+    }
+    // the Meter on already-open claude.ai tabs (the tap has to live in the page's own world)
+    for (const t of await chrome.tabs.query({ url: ["https://claude.ai/*"] })) {
+      chrome.scripting.executeScript({ target: { tabId: t.id }, world: "MAIN", files: ["content/meter-tap.js"] })
+        .then(() => chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["lib/meter.js", "content/meter.js"] })).catch(() => {});
     }
   } catch (e) { /* not fatal */ }
 });

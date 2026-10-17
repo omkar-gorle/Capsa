@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Capsa",
-  "version": "6.2.0",
+  "version": "6.8.0",
   "description": "Move your AI work. Capture a chat, shrink it into a capsule, and continue on any AI. Everything stays on your device.",
   "permissions": [
     "activeTab",
@@ -23,7 +23,7 @@
   ],
   "action": {
     "default_popup": "ui/popup.html",
-    "default_title": "Capsa \u2014 move your AI work",
+    "default_title": "Capsa — move your AI work",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -48,8 +48,12 @@
         "https://chat.deepseek.com/*"
       ],
       "js": [
+        "lib/redact.js",
+        "lib/notes.js",
+        "lib/understand.js",
         "lib/capsule.js",
         "lib/hosts.js",
+        "lib/pdftext.js",
         "lib/files.js",
         "ui/card.js",
         "content/launcher.js"
@@ -67,6 +71,27 @@
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "content/meter-tap.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "lib/meter.js",
+        "content/meter.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "icons": {
